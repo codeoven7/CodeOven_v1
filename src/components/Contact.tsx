@@ -2,9 +2,10 @@ import { motion } from "motion/react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
-import { Mail, MapPin, Phone, Github, Linkedin, Twitter, MessageSquare } from "lucide-react";
+import { Mail, MapPin, Phone, Github, Linkedin, Twitter, MessageSquare, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner@2.0.3";
+import { submitToGoogleSheets } from "../utils/googleSheets";
 
 export function Contact() {
   const [formData, setFormData] = useState({
@@ -13,14 +14,58 @@ export function Contact() {
     phone: '',
     message: ''
   });
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate form submission
-    toast("Message sent! We'll get back to you soon.", {
-      description: "Thanks for reaching out to CodeOven!",
-    });
-    setFormData({ name: '', email: '', phone: '', message: '' });
+    
+    // Prevent double submission
+    if (loading) {
+      return;
+    }
+    
+    // Basic validation
+    if (!formData.name || !formData.email || !formData.message) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+    
+    // Set loading state first
+    setLoading(true);
+    
+    // Use setTimeout to let the UI update before processing
+    setTimeout(() => {
+      // Submit to Google Sheets with timeout
+      const submissionPromise = submitToGoogleSheets(formData);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout')), 10000); // 10 second timeout
+      });
+      
+      Promise.race([submissionPromise, timeoutPromise])
+        .then((result) => {
+          if (result.success) {
+            toast.success("Message sent! We'll get back to you soon.", {
+              description: "Thanks for reaching out to CodeOven!",
+            });
+            setFormData({ name: '', email: '', phone: '', message: '' });
+          } else {
+            toast.error("Failed to send message. Please try again.");
+          }
+        })
+        .catch((error) => {
+          console.error('Form submission error:', error);
+          if (error.message === 'Request timeout') {
+            toast.error("Request is taking too long. Your message might still be sent.", {
+              description: "We'll contact you if we received it!"
+            });
+          } else {
+            toast.error("Something went wrong. Please try again.");
+          }
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }, 0); // 0ms timeout just to let React update the UI
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -174,7 +219,12 @@ export function Contact() {
                   type="submit"
                   className="w-full bg-black text-white hover:bg-gray-800 py-3 rounded-2xl"
                 >
-                  Send Message
+                  <div className="flex items-center justify-center">
+                    {loading && (
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    )}
+                    <span>Send Message</span>
+                  </div>
                 </Button>
               </motion.div>
             </form>
